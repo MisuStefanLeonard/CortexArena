@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cortex Arena - Adventure</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            background-attachment: fixed;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        header {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 20px;
+            text-align: center;
+            border-bottom: 2px solid #00d4ff;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        header h1 {
+            font-size: 2.5em;
+            text-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+        }
+
+        main {
+            flex: 1;
+            padding: 40px 20px;
+        }
+
+        .location-section {
+            max-width: 1200px;
+            margin: 0 auto 60px;
+            scroll-margin-top: 80px;
+        }
+
+        .location-header {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.3);
+            border-left: 5px solid #00d4ff;
+            border-radius: 5px;
+        }
+
+        .location-icon {
+            font-size: 3em;
+        }
+
+        .location-header h2 {
+            font-size: 2em;
+            color: #00d4ff;
+        }
+
+        .location-header p {
+            color: #bbb;
+            font-size: 0.9em;
+        }
+
+        .levels-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .level-card {
+            background: rgba(0, 0, 0, 0.4);
+            border: 2px solid rgba(0, 212, 255, 0.3);
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .level-card:hover:not(.locked) {
+            background: rgba(0, 212, 255, 0.1);
+            border-color: #00d4ff;
+            transform: translateY(-5px);
+        }
+
+        .level-card.locked {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .level-card.completed {
+            border-color: #4caf50;
+            background: rgba(76, 175, 80, 0.1);
+        }
+
+        .level-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #00d4ff;
+            margin-bottom: 10px;
+        }
+
+        .level-difficulty {
+            font-size: 0.8em;
+            color: #bbb;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+        }
+
+        .level-game {
+            font-size: 0.9em;
+            color: #ffa726;
+            margin-bottom: 15px;
+        }
+
+        .level-badge {
+            display: inline-block;
+            padding: 5px 10px;
+            background: #4caf50;
+            border-radius: 20px;
+            font-size: 0.75em;
+            color: #fff;
+            margin-top: 10px;
+        }
+
+        .level-card .lock-icon {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+
+        /* Boss level styling */
+        .level-card.boss {
+            grid-column: span 2;
+            background: linear-gradient(135deg, rgba(255, 87, 34, 0.2), rgba(156, 39, 176, 0.2));
+            border: 2px solid #ff5722;
+        }
+
+        .level-card.boss .level-number {
+            color: #ff5722;
+            text-shadow: 0 0 10px rgba(255, 87, 34, 0.5);
+        }
+
+        .player-animation {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            background: #00d4ff;
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            animation: move-to-next 2s ease-in-out forwards;
+            z-index: 50;
+            box-shadow: 0 0 15px rgba(0, 212, 255, 0.8);
+        }
+
+        @keyframes move-to-next {
+            0% {
+                opacity: 1;
+                transform: translate(-50%, -50%) scale(1);
+            }
+            100% {
+                opacity: 0;
+                transform: translate(-50%, -50%) scale(0.5);
+            }
+        }
+
+        footer {
+            margin-top: auto;
+            padding: 20px;
+            text-align: center;
+            border-top: 1px solid rgba(0, 212, 255, 0.3);
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        @media (max-width: 768px) {
+            .levels-grid {
+                grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+                gap: 15px;
+            }
+
+            .level-card.boss {
+                grid-column: span 1;
+            }
+
+            header h1 {
+                font-size: 1.8em;
+            }
+
+            .location-header {
+                flex-direction: column;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🗺️ Cortex Arena Adventure</h1>
+        <p>Total Games Played: {{ total_games }}</p>
+    </header>
+
+    <main id="main">
+        <!-- Locations and levels will be generated here -->
+    </main>
+
+    <footer>
+        <p>&copy; 2025 Cortex Arena. Train your brain, unlock the world.</p>
+    </footer>
+
+    <script>
+        // Game types in rotation
+        const gameTypes = ['memory', 'reaction', 'logic', 'attention'];
+        const gameEmojis = {
+            'memory': '🧠',
+            'reaction': '⚡',
+            'logic': '🧩',
+            'attention': '👁️'
+        };
+
+        const locations = [
+            { name: 'Poiană', emoji: '🌾', type: 'grass', color: '#7cb342', minLevel: 1 },
+            { name: 'Pădure', emoji: '🌲', type: 'forest', color: '#558b2f', minLevel: 1 },
+            { name: 'Munte Lava', emoji: '🌋', type: 'lava', color: '#d84315', minLevel: 2 },
+            { name: 'Mormânt', emoji: '⚰️', type: 'cemetery', color: '#424242', minLevel: 3 },
+            { name: 'Fortăreață', emoji: '🏰', type: 'fortress', color: '#9c27b0', minLevel: 4 },
+            { name: 'Vulcan', emoji: '🔥', type: 'volcano', color: '#ff5722', minLevel: 5 },
+            { name: 'Piață Nebunilor', emoji: '🎪', type: 'market', color: '#ffa726', minLevel: 6 },
+            { name: 'Castel Negru', emoji: '👑', type: 'castle', color: '#1a237e', minLevel: 7 }
+        ];
+
+        const difficulties = ['easy', 'medium', 'hard'];
+        const difficultyLabels = { 'easy': 'Ușor', 'medium': 'Mediu', 'hard': 'Greu' };
+
+        const gameCount = {{ total_games }};
+        const completedLevels = JSON.parse(localStorage.getItem('completedLevels') || '{}');
+
+        // Determine which locations are unlocked
+        function isLocationUnlocked(locIndex) {
+            return locIndex * 8 <= gameCount;
+        }
+
+        // Get game type for a level (rotates through games)
+        function getGameTypeForLevel(levelNum) {
+            return gameTypes[(levelNum - 1) % gameTypes.length];
+        }
+
+        // Get difficulty for a level
+        function getDifficultyForLevel(levelNum) {
+            if (levelNum <= 2) return 'easy';
+            if (levelNum <= 5) return 'medium';
+            return 'hard';
+        }
+
+        // Check if level is completed
+        function isLevelCompleted(locIndex, levelNum) {
+            const key = `loc_${locIndex}_level_${levelNum}`;
+            return completedLevels[key] === true;
+        }
+
+        // Mark level as completed
+        function markLevelCompleted(locIndex, levelNum) {
+            const key = `loc_${locIndex}_level_${levelNum}`;
+            completedLevels[key] = true;
+            localStorage.setItem('completedLevels', JSON.stringify(completedLevels));
+        }
+
+        // Create HTML for a level card
+        function createLevelCard(locIndex, levelNum) {
+            const gameType = getGameTypeForLevel(levelNum);
+            const difficulty = getDifficultyForLevel(levelNum);
+            const isUnlocked = isLocationUnlocked(locIndex);
+            const isCompleted = isLevelCompleted(locIndex, levelNum);
+            const isBoss = levelNum > 6;
+
+            const card = document.createElement('div');
+            card.className = `level-card ${isBoss ? 'boss' : ''} ${!isUnlocked ? 'locked' : ''} ${isCompleted ? 'completed' : ''}`;
+
+            let content = '';
+
+            if (!isUnlocked) {
+                content = `
+                    <div class="lock-icon">🔒</div>
+                    <div class="level-number">Nivel ${levelNum}</div>
+                    <div class="level-difficulty">Blocat</div>
+                `;
+            } else {
+                const isBossLevel = isBoss;
+                const bossText = isBossLevel ? '👹 BOSS' : '';
+
+                content = `
+                    <div class="level-number">Nivel ${levelNum}</div>
+                    <div class="level-difficulty">${bossText ? bossText : difficultyLabels[difficulty]}</div>
+                `;
+
+                if (isBossLevel) {
+                    content += '<div class="level-game">Secvență de jocuri</div>';
+                } else {
+                    content += `<div class="level-game">${gameEmojis[gameType]} ${gameType.charAt(0).toUpperCase() + gameType.slice(1)}</div>`;
+                }
+
+                if (isCompleted) {
+                    content += '<div class="level-badge">✓ Completat</div>';
+                }
+            }
+
+            card.innerHTML = content;
+
+            if (isUnlocked && !isCompleted) {
+                card.addEventListener('click', () => {
+                    playLevel(locIndex, levelNum);
+                });
+                card.style.cursor = 'pointer';
+            }
+
+            return card;
+        }
+
+        // Play a level
+        function playLevel(locIndex, levelNum) {
+            const gameType = getGameTypeForLevel(levelNum);
+            const difficulty = getDifficultyForLevel(levelNum);
+            const isBoss = levelNum > 6;
+
+            if (isBoss) {
+                // Boss level - sequence of games
+                sessionStorage.setItem('bossSequence', JSON.stringify({
+                    location: locIndex,
+                    level: levelNum,
+                    currentGame: 0,
+                    games: [
+                        { type: gameTypes[0], difficulty: 'hard' },
+                        { type: gameTypes[1], difficulty: 'hard' },
+                        { type: gameTypes[2], difficulty: 'hard' },
+                        { type: gameTypes[3], difficulty: 'hard' }
+                    ]
+                }));
+                window.location.href = `/play/${gameTypes[0]}/?difficulty=hard&boss=1&loc=${locIndex}&level=${levelNum}`;
+            } else {
+                window.location.href = `/play/${gameType}/?difficulty=${difficulty}&loc=${locIndex}&level=${levelNum}`;
+            }
+        }
+
+        // Generate all location sections
+        function generateLocations() {
+            const main = document.getElementById('main');
+
+            locations.forEach((loc, locIndex) => {
+                const section = document.createElement('div');
+                section.className = 'location-section';
+                section.id = `location_${locIndex}`;
+
+                const header = document.createElement('div');
+                header.className = 'location-header';
+                header.innerHTML = `
+                    <div class="location-icon">${loc.emoji}</div>
+                    <div>
+                        <h2>${loc.name}</h2>
+                        <p>${loc.type.charAt(0).toUpperCase() + loc.type.slice(1)} • Min Level: ${loc.minLevel}</p>
+                    </div>
+                `;
+
+                const grid = document.createElement('div');
+                grid.className = 'levels-grid';
+
+                for (let level = 1; level <= 8; level++) {
+                    grid.appendChild(createLevelCard(locIndex, level));
+                }
+
+                section.appendChild(header);
+                section.appendChild(grid);
+                main.appendChild(section);
+            });
+        }
+
+        // Handle game completion and show animation
+        function handleLevelCompletion(locIndex, levelNum) {
+            const key = `loc_${locIndex}_level_${levelNum}`;
+            markLevelCompleted(locIndex, levelNum);
+
+            // Animate player moving to next level
+            const nextLevel = levelNum + 1;
+            if (nextLevel <= 8) {
+                const nextCard = document.querySelector(`#location_${locIndex} .level-card:nth-child(${nextLevel + 1})`);
+                if (nextCard) {
+                    const anim = document.createElement('div');
+                    anim.className = 'player-animation';
+                    nextCard.appendChild(anim);
+
+                    setTimeout(() => {
+                        location.reload();
+                    }, 2000);
+                }
+            } else {
+                // Location completed, move to next location
+                setTimeout(() => {
+                    location.reload();
+                }, 2000);
+            }
+        }
+
+        // Check if returning from a game
+        function checkGameCompletion() {
+            const params = new URLSearchParams(window.location.search);
+            const completed = params.get('completed');
+            if (completed) {
+                const [locIndex, levelNum] = completed.split(',').map(Number);
+                handleLevelCompletion(locIndex, levelNum);
+            }
+        }
+
+        // Initialize
+        generateLocations();
+        checkGameCompletion();
+
+        // Expose functions globally for use in game pages
+        window.markLevelCompleted = markLevelCompleted;
+    </script>
+</body>
+</html>

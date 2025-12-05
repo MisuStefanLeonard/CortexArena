@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Logică — Cortex Arena</title>
+    <style>
+        :root{--bg:#0b1220;--card:#0f1724;--accent:#ff8c00;--muted:#9aa7b2;--green:#10b981;--red:#ef4444}
+        body{font-family:Inter, Arial, sans-serif;margin:0;background:linear-gradient(160deg,#0b1220,#081123);color:#fff;}
+        .wrap{max-width:900px;margin:28px auto;padding:18px}
+        header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+        header h1{margin:0;font-size:20px}
+        .controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+        .btn{background:var(--accent);color:#111;padding:8px 12px;border-radius:8px;text-decoration:none;font-weight:700;cursor:pointer;border:none;font-size:14px}
+        .btn:disabled{opacity:0.5;cursor:not-allowed}
+        .status{margin-top:12px;color:var(--muted);display:flex;gap:18px;flex-wrap:wrap}
+        .puzzle-area{margin-top:22px;min-height:320px;background:rgba(255,255,255,0.03);border-radius:12px;padding:28px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+        .sequence{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-bottom:18px}
+        .seq-num{background:rgba(255,255,255,0.08);padding:14px 20px;border-radius:8px;font-size:22px;font-weight:700;min-width:50px;text-align:center}
+        .seq-num.question{background:linear-gradient(135deg,var(--accent),#d97706);color:#000}
+        .answer-input{margin-top:18px;display:flex;gap:12px;align-items:center}
+        .answer-input input{background:rgba(255,255,255,0.08);border:2px solid rgba(255,255,255,0.2);color:#fff;padding:10px 16px;border-radius:8px;font-size:18px;width:120px;text-align:center;font-weight:700}
+        .answer-input input:focus{outline:none;border-color:var(--accent)}
+        .feedback{margin-top:12px;font-size:16px;font-weight:700;min-height:24px}
+        .feedback.correct{color:var(--green)}
+        .feedback.wrong{color:var(--red)}
+        .results{margin-top:18px;background:rgba(255,255,255,0.05);padding:14px;border-radius:8px}
+        .results h3{margin:0 0 8px 0}
+        .pattern-hint{margin-top:8px;font-size:14px;color:var(--muted);font-style:italic}
+        .instructions{background:rgba(255,255,255,0.06);padding:12px;border-radius:8px;margin-bottom:12px;font-size:14px;color:var(--muted)}
+        .instructions strong{color:#fff}
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <header>
+            <h1>Logică — Rezolvă pattern-urile</h1>
+            <div class="controls">
+                <a class="btn" href="/">Înapoi</a>
+                <label style="color:var(--muted);display:flex;align-items:center;gap:8px">
+                    <span>Dificultate:</span>
+                    <select id="difficultySelect">
+                        <option value="easy" {% if difficulty == 'easy' %}selected{% endif %}>Easy (5 puzzle-uri)</option>
+                        <option value="medium" {% if difficulty == 'medium' %}selected{% endif %}>Medium (8 puzzle-uri)</option>
+                        <option value="hard" {% if difficulty == 'hard' %}selected{% endif %}>Hard (10 puzzle-uri)</option>
+                    </select>
+                </label>
+                <button class="btn" id="startBtn">Start</button>
+                <div style="color:var(--muted);font-weight:700">XP: <span id="currentXP">{{ user_summary.xp_total }}</span></div>
+            </div>
+        </header>
+
+        <div class="status">
+            <span id="puzzleCounter">Puzzle: 0 / {{ puzzles_count }}</span>
+            <span id="timer">Timp: 0s</span>
+            <span id="scoreCounter">Corecte: 0</span>
+        </div>
+
+        <div class="puzzle-area" id="puzzleArea">
+            <p style="color:var(--muted);text-align:center">Apasă „Start" pentru a începe testul de logică.<br>Găsește pattern-ul și completează numărul lipsă!</p>
+        </div>
+
+        <div class="results" id="results" style="display:none">
+            <h3>Rezultate</h3>
+            <p>Răspunsuri corecte: <strong id="correctCount">0</strong> / <strong id="totalCount">0</strong></p>
+            <p>Acuratețe: <strong id="accuracyPercent">0</strong>%</p>
+            <p>XP câștigate: <strong id="earnedXP">0</strong></p>
+        </div>
+    </div>
+
+    <script>
+    (function(){
+        const maxPuzzles = {{ puzzles_count }};
+        const difficulty = '{{ difficulty }}';
+        const loc = new URLSearchParams(window.location.search).get('loc');
+        const level = new URLSearchParams(window.location.search).get('level');
+
+        let state = 'idle';
+        let currentPuzzle = 0;
+        let correctAnswers = 0;
+        let globalTimer = 0;
+        let globalInterval = null;
+        let currentAnswer = null;
+
+        const puzzleArea = document.getElementById('puzzleArea');
+        const startBtn = document.getElementById('startBtn');
+        const diffSelect = document.getElementById('difficultySelect');
+        const puzzleCounter = document.getElementById('puzzleCounter');
+        const timerEl = document.getElementById('timer');
+        const scoreCounter = document.getElementById('scoreCounter');
+        const resultsDiv = document.getElementById('results');
+
+        // Pattern generators
+        const patterns = {
+            add: (start, step) => ({seq: [start, start+step, start+step*2, start+step*3], ans: start+step*4, hint: `+${step}`}),
+            multiply: (start, factor) => ({seq: [start, start*factor, start*factor*factor, start*factor*factor*factor], ans: start*Math.pow(factor,4), hint: `×${factor}`}),
+            square: (start) => ({seq: [start, start*start, start*start*start, start*start*start*start], ans: start*start*start*start*start, hint: 'exponențial'}),
+            fibonacci: (a, b) => ({seq: [a, b, a+b, a+2*b], ans: 2*a+3*b, hint: 'Fibonacci-like'}),
+            alternate: (a, b, step) => ({seq: [a, a+step, a, a+step*2], ans: a, hint: 'alternare'}),
+        };
+
+        startBtn.addEventListener('click', startGame);
+        diffSelect.addEventListener('change', function(){
+            window.location.search = '?difficulty=' + encodeURIComponent(diffSelect.value);
+        });
+
+        function startGame(){
+            state = 'playing';
+            currentPuzzle = 0;
+            correctAnswers = 0;
+            globalTimer = 0;
+            resultsDiv.style.display = 'none';
+            startBtn.disabled = true;
+            diffSelect.disabled = true;
+            updateCounters();
+            if(globalInterval) clearInterval(globalInterval);
+            globalInterval = setInterval(()=>{ globalTimer++; timerEl.textContent = 'Timp: '+globalTimer+'s'; }, 1000);
+            nextPuzzle();
+        }
+
+        function nextPuzzle(){
+            if(currentPuzzle >= maxPuzzles){
+                finishGame();
+                return;
+            }
+            currentPuzzle++;
+            updateCounters();
+            showPuzzle();
+        }
+
+        function generatePuzzle(){
+            const diffLevel = {'easy': 0, 'medium': 1, 'hard': 2}[difficulty] || 0;
+            const types = ['add', 'multiply', 'fibonacci', 'alternate'];
+            const type = types[Math.floor(Math.random() * types.length)];
+            
+            let puzzle;
+            if(type === 'add'){
+                const start = Math.floor(Math.random() * 10) + 1;
+                const step = Math.floor(Math.random() * (5 + diffLevel * 3)) + 1;
+                puzzle = patterns.add(start, step);
+            } else if(type === 'multiply'){
+                const start = Math.floor(Math.random() * 5) + 1;
+                const factor = 2 + Math.floor(Math.random() * (1 + diffLevel));
+                puzzle = patterns.multiply(start, factor);
+            } else if(type === 'fibonacci'){
+                const a = Math.floor(Math.random() * 5) + 1;
+                const b = Math.floor(Math.random() * 5) + 1;
+                puzzle = patterns.fibonacci(a, b);
+            } else {
+                const a = Math.floor(Math.random() * 10) + 1;
+                const step = Math.floor(Math.random() * 5) + 1;
+                puzzle = patterns.alternate(a, a + 10, step);
+            }
+            return puzzle;
+        }
+
+        function showPuzzle(){
+            const puzzle = generatePuzzle();
+            currentAnswer = puzzle.ans;
+            
+            puzzleArea.innerHTML = '';
+            
+            // Add instructions
+            const instructionsDiv = document.createElement('div');
+            instructionsDiv.className = 'instructions';
+            instructionsDiv.innerHTML = `<strong>Găsește pattern-ul:</strong> Analizează secvența și determină ce operație matematică se repetă. Poate fi adunare, înmulțire, ridicare la putere sau o altă regulă. Care este următorul număr?`;
+            puzzleArea.appendChild(instructionsDiv);
+            
+            const seqDiv = document.createElement('div');
+            seqDiv.className = 'sequence';
+            puzzle.seq.forEach(num => {
+                const el = document.createElement('div');
+                el.className = 'seq-num';
+                el.textContent = num;
+                seqDiv.appendChild(el);
+            });
+            const qMark = document.createElement('div');
+            qMark.className = 'seq-num question';
+            qMark.textContent = '?';
+            seqDiv.appendChild(qMark);
+            puzzleArea.appendChild(seqDiv);
+
+            const inputDiv = document.createElement('div');
+            inputDiv.className = 'answer-input';
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.id = 'answerInput';
+            input.placeholder = 'Răspuns';
+            input.autofocus = true;
+            const submitBtn = document.createElement('button');
+            submitBtn.className = 'btn';
+            submitBtn.textContent = 'Verifică';
+            submitBtn.onclick = ()=>checkAnswer();
+            inputDiv.appendChild(input);
+            inputDiv.appendChild(submitBtn);
+            puzzleArea.appendChild(inputDiv);
+
+            const feedbackDiv = document.createElement('div');
+            feedbackDiv.className = 'feedback';
+            feedbackDiv.id = 'feedback';
+            puzzleArea.appendChild(feedbackDiv);
+
+            const hintDiv = document.createElement('div');
+            hintDiv.className = 'pattern-hint';
+            hintDiv.textContent = `Pattern: ${puzzle.hint}`;
+            hintDiv.style.display = 'none';
+            hintDiv.id = 'hintDiv';
+            puzzleArea.appendChild(hintDiv);
+
+            input.addEventListener('keypress', function(e){
+                if(e.key === 'Enter') checkAnswer();
+            });
+        }
+
+        function checkAnswer(){
+            const input = document.getElementById('answerInput');
+            const feedback = document.getElementById('feedback');
+            const userAnswer = parseInt(input.value);
+            
+            if(isNaN(userAnswer)){
+                feedback.textContent = 'Te rog introdu un număr valid.';
+                feedback.className = 'feedback';
+                return;
+            }
+
+            if(userAnswer === currentAnswer){
+                correctAnswers++;
+                updateCounters();
+                feedback.textContent = '✓ Corect!';
+                feedback.className = 'feedback correct';
+            } else {
+                feedback.textContent = `✗ Greșit! Răspunsul corect era ${currentAnswer}`;
+                feedback.className = 'feedback wrong';
+                document.getElementById('hintDiv').style.display = 'block';
+            }
+
+            input.disabled = true;
+            document.querySelector('.answer-input button').disabled = true;
+            setTimeout(nextPuzzle, 2000);
+        }
+
+        function updateCounters(){
+            puzzleCounter.textContent = `Puzzle: ${currentPuzzle} / ${maxPuzzles}`;
+            scoreCounter.textContent = `Corecte: ${correctAnswers}`;
+        }
+
+        function finishGame(){
+            if(globalInterval){ clearInterval(globalInterval); globalInterval=null; }
+            state = 'finished';
+            startBtn.disabled = false;
+            diffSelect.disabled = false;
+            puzzleArea.innerHTML = '<p style="color:var(--muted);text-align:center;font-size:20px">Test finalizat!</p>';
+            submitResult();
+        }
+
+        function getCookie(name){
+            let v = null;
+            if(document.cookie && document.cookie !== ''){
+                const cookies = document.cookie.split(';');
+                for(let i=0;i<cookies.length;i++){
+                    const c = cookies[i].trim();
+                    if(c.substring(0, name.length + 1) === (name + '=')){
+                        v = decodeURIComponent(c.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return v;
+        }
+
+        function submitResult(){
+            const csrftoken = getCookie('csrftoken');
+            fetch('/play/logic/submit/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrftoken
+                },
+                body: JSON.stringify({ 
+                    total_puzzles: maxPuzzles, 
+                    correct_answers: correctAnswers, 
+                    time_spent_sec: globalTimer, 
+                    difficulty: difficulty 
+                })
+            }).then(r=>r.json()).then(data=>{
+                if(data && data.xp){
+                    document.getElementById('earnedXP').textContent = data.xp;
+                    const xpEl = document.getElementById('currentXP');
+                    if(xpEl){
+                        const cur = parseInt(xpEl.textContent) || 0;
+                        xpEl.textContent = cur + Number(data.xp);
+                    }
+                    // If coming from adventure, redirect back with completion marker
+                    if(loc !== null && level !== null) {
+                        setTimeout(() => {
+                            window.location.href = `/begin/?completed=${loc},${level}`;
+                        }, 3000);
+                    }
+                }
+                if(data && data.accuracy !== undefined){
+                    document.getElementById('accuracyPercent').textContent = data.accuracy;
+                }
+                document.getElementById('correctCount').textContent = correctAnswers;
+                document.getElementById('totalCount').textContent = maxPuzzles;
+                resultsDiv.style.display = 'block';
+            }).catch(()=>{
+                document.getElementById('correctCount').textContent = correctAnswers;
+                document.getElementById('totalCount').textContent = maxPuzzles;
+                const acc = Math.round((correctAnswers / maxPuzzles) * 100);
+                document.getElementById('accuracyPercent').textContent = acc;
+                document.getElementById('earnedXP').textContent = '—';
+                resultsDiv.style.display = 'block';
+            });
+        }
+    })();
+    </script>
+</body>
+</html>

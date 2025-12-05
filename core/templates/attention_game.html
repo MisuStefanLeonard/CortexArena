@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Atenție — Cortex Arena</title>
+    <style>
+        :root{--bg:#0b1220;--card:#0f1724;--accent:#ff8c00;--muted:#9aa7b2;--green:#10b981;--red:#ef4444;--blue:#3b82f6}
+        body{font-family:Inter, Arial, sans-serif;margin:0;background:linear-gradient(160deg,#0b1220,#081123);color:#fff;overflow:hidden;}
+        .wrap{max-width:900px;margin:28px auto;padding:18px}
+        header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+        header h1{margin:0;font-size:20px}
+        .controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+        .btn{background:var(--accent);color:#111;padding:8px 12px;border-radius:8px;text-decoration:none;font-weight:700;cursor:pointer;border:none;font-size:14px}
+        .btn:disabled{opacity:0.5;cursor:not-allowed}
+        .status{margin-top:12px;color:var(--muted);display:flex;gap:18px;flex-wrap:wrap}
+        .game-area{margin-top:22px;height:420px;background:rgba(255,255,255,0.03);border-radius:12px;padding:28px;position:relative;overflow:hidden}
+        .instructions{text-align:center;color:var(--muted);padding:40px 20px}
+        .instructions strong{color:#fff;display:block;margin-bottom:8px;font-size:18px}
+        .dot{width:40px;height:40px;border-radius:50%;position:absolute;cursor:pointer;transition:transform 0.15s;box-shadow:0 2px 8px rgba(0,0,0,0.4)}
+        .dot:hover{transform:scale(1.1)}
+        .dot.target{background:var(--accent);box-shadow:0 2px 12px rgba(255,140,0,0.6)}
+        .dot.distractor{background:var(--blue);box-shadow:0 2px 8px rgba(59,130,246,0.4)}
+        .phase-indicator{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,0.1);padding:8px 16px;border-radius:8px;font-weight:700;font-size:14px}
+        .results{margin-top:18px;background:rgba(255,255,255,0.05);padding:14px;border-radius:8px}
+        .results h3{margin:0 0 8px 0}
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <header>
+            <h1>Atenție — Urmărește ținta</h1>
+            <div class="controls">
+                <a class="btn" href="/">Înapoi</a>
+                <label style="color:var(--muted);display:flex;align-items:center;gap:8px">
+                    <span>Dificultate:</span>
+                    <select id="difficultySelect">
+                        <option value="easy" {% if difficulty == 'easy' %}selected{% endif %}>Easy (5 runde)</option>
+                        <option value="medium" {% if difficulty == 'medium' %}selected{% endif %}>Medium (8 runde)</option>
+                        <option value="hard" {% if difficulty == 'hard' %}selected{% endif %}>Hard (10 runde)</option>
+                    </select>
+                </label>
+                <button class="btn" id="startBtn">Start</button>
+                <div style="color:var(--muted);font-weight:700">XP: <span id="currentXP">{{ user_summary.xp_total }}</span></div>
+            </div>
+        </header>
+
+        <div class="status">
+            <span id="roundCounter">Rundă: 0 / {{ rounds }}</span>
+            <span id="timer">Timp: 0s</span>
+            <span id="scoreCounter">Corecte: 0</span>
+        </div>
+
+        <div class="game-area" id="gameArea">
+            <div class="instructions">
+                <strong>Instrucțiuni:</strong>
+                Vei vedea mai multe cercuri colorate care se mișcă pe ecran.<br>
+                <span style="color:var(--accent);font-weight:700">Cercul PORTOCALIU</span> este ținta ta — memorează-l!<br>
+                După câteva secunde, toate cercurile vor deveni <span style="color:var(--blue);font-weight:700">ALBASTRE</span>.<br>
+                Trebuie să dai click pe cercul care a fost inițial portocaliu!
+            </div>
+        </div>
+
+        <div class="results" id="results" style="display:none">
+            <h3>Rezultate</h3>
+            <p>Click-uri corecte: <strong id="correctCount">0</strong> / <strong id="totalCount">0</strong></p>
+            <p>Acuratețe: <strong id="accuracyPercent">0</strong>%</p>
+            <p>XP câștigate: <strong id="earnedXP">0</strong></p>
+        </div>
+    </div>
+
+    <script>
+    (function(){
+        const maxRounds = {{ rounds }};
+        const difficulty = '{{ difficulty }}';
+        const loc = new URLSearchParams(window.location.search).get('loc');
+        const level = new URLSearchParams(window.location.search).get('level');
+
+        let state = 'idle';
+        let currentRound = 0;
+        let correctClicks = 0;
+        let globalTimer = 0;
+        let globalInterval = null;
+        let targetDot = null;
+        let dots = [];
+        let phaseTimer = null;
+
+        const gameArea = document.getElementById('gameArea');
+        const startBtn = document.getElementById('startBtn');
+        const diffSelect = document.getElementById('difficultySelect');
+        const roundCounter = document.getElementById('roundCounter');
+        const timerEl = document.getElementById('timer');
+        const scoreCounter = document.getElementById('scoreCounter');
+        const resultsDiv = document.getElementById('results');
+
+        const config = {
+            easy: {dotsCount: 6, showTime: 1500, hideTime: 1500},
+            medium: {dotsCount: 8, showTime: 1000, hideTime: 1000},
+            hard: {dotsCount: 10, showTime: 500, hideTime: 500}
+        };
+
+        startBtn.addEventListener('click', startGame);
+        diffSelect.addEventListener('change', function(){
+            window.location.search = '?difficulty=' + encodeURIComponent(diffSelect.value);
+        });
+
+        function startGame(){
+            state = 'playing';
+            currentRound = 0;
+            correctClicks = 0;
+            globalTimer = 0;
+            resultsDiv.style.display = 'none';
+            startBtn.disabled = true;
+            diffSelect.disabled = true;
+            updateCounters();
+            if(globalInterval) clearInterval(globalInterval);
+            globalInterval = setInterval(()=>{ globalTimer++; timerEl.textContent = 'Timp: '+globalTimer+'s'; }, 1000);
+            nextRound();
+        }
+
+        function nextRound(){
+            if(currentRound >= maxRounds){
+                finishGame();
+                return;
+            }
+            currentRound++;
+            updateCounters();
+            showPhase();
+        }
+
+        function showPhase(){
+            gameArea.innerHTML = '';
+            const cfg = config[difficulty];
+            
+            // Phase indicator
+            const indicator = document.createElement('div');
+            indicator.className = 'phase-indicator';
+            indicator.textContent = 'Memorează cercul PORTOCALIU';
+            gameArea.appendChild(indicator);
+
+            // Generate dots
+            dots = [];
+            const targetIdx = Math.floor(Math.random() * cfg.dotsCount);
+            const speedMultiplier = {easy: 20 , medium: 40, hard: 60}[difficulty];
+            for(let i = 0; i < cfg.dotsCount; i++){
+                const dot = document.createElement('div');
+                dot.className = i === targetIdx ? 'dot target' : 'dot distractor';
+                dot.dataset.isTarget = i === targetIdx ? 'true' : 'false';
+                
+                // Random position
+                const x = Math.random() * (gameArea.offsetWidth - 60) + 10;
+                const y = Math.random() * (gameArea.offsetHeight - 60) + 40;
+                dot.style.left = x + 'px';
+                dot.style.top = y + 'px';
+                
+                // Random velocity for all dots (including target)
+                const vx = (Math.random() - 0.5) * speedMultiplier;
+                const vy = (Math.random() - 0.5) * speedMultiplier;
+                
+                gameArea.appendChild(dot);
+                dots.push({el: dot, vx: vx, vy: vy, isTarget: i === targetIdx});
+                
+                if(i === targetIdx) targetDot = dot;
+            }
+
+            // Start movement
+            const moveInterval = setInterval(()=>{
+                dots.forEach(d => {
+                    let x = parseFloat(d.el.style.left);
+                    let y = parseFloat(d.el.style.top);
+                    x += d.vx;
+                    y += d.vy;
+                    // Bounce
+                    if(x < 0 || x > gameArea.offsetWidth - 40) d.vx *= -1;
+                    if(y < 40 || y > gameArea.offsetHeight - 40) d.vy *= -1;
+                    d.el.style.left = Math.max(0, Math.min(x, gameArea.offsetWidth - 40)) + 'px';
+                    d.el.style.top = Math.max(40, Math.min(y, gameArea.offsetHeight - 40)) + 'px';
+                });
+            }, 30);
+
+            // After showTime, hide colors and enable clicks
+            phaseTimer = setTimeout(()=>{
+                clearInterval(moveInterval);
+                indicator.textContent = 'Care a fost cercul portocaliu?';
+                dots.forEach(d => {
+                    d.el.classList.remove('target');
+                    d.el.classList.add('distractor');
+                    d.el.onclick = ()=>handleClick(d.isTarget);
+                });
+            }, cfg.showTime);
+        }
+
+        function handleClick(isCorrect){
+            clearTimeout(phaseTimer);
+            dots.forEach(d => d.el.onclick = null);
+            
+            if(isCorrect){
+                correctClicks++;
+                updateCounters();
+                showFeedback('✓ Corect!', 'var(--green)');
+            } else {
+                showFeedback('✗ Greșit!', 'var(--red)');
+            }
+            
+            setTimeout(nextRound, 1200);
+        }
+
+        function showFeedback(text, color){
+            const fb = document.createElement('div');
+            fb.style.position = 'absolute';
+            fb.style.top = '50%';
+            fb.style.left = '50%';
+            fb.style.transform = 'translate(-50%, -50%)';
+            fb.style.fontSize = '32px';
+            fb.style.fontWeight = '700';
+            fb.style.color = color;
+            fb.textContent = text;
+            gameArea.appendChild(fb);
+        }
+
+        function updateCounters(){
+            roundCounter.textContent = `Rundă: ${currentRound} / ${maxRounds}`;
+            scoreCounter.textContent = `Corecte: ${correctClicks}`;
+        }
+
+        function finishGame(){
+            if(globalInterval){ clearInterval(globalInterval); globalInterval=null; }
+            state = 'finished';
+            startBtn.disabled = false;
+            diffSelect.disabled = false;
+            gameArea.innerHTML = '<div class="instructions"><strong>Test finalizat!</strong><br>Vezi rezultatele mai jos.</div>';
+            submitResult();
+        }
+
+        function getCookie(name){
+            let v = null;
+            if(document.cookie && document.cookie !== ''){
+                const cookies = document.cookie.split(';');
+                for(let i=0;i<cookies.length;i++){
+                    const c = cookies[i].trim();
+                    if(c.substring(0, name.length + 1) === (name + '=')){
+                        v = decodeURIComponent(c.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return v;
+        }
+
+        function submitResult(){
+            const csrftoken = getCookie('csrftoken');
+            fetch('/play/attention/submit/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrftoken
+                },
+                body: JSON.stringify({ 
+                    total_rounds: maxRounds, 
+                    correct_clicks: correctClicks, 
+                    time_spent_sec: globalTimer, 
+                    difficulty: difficulty 
+                })
+            }).then(r=>r.json()).then(data=>{
+                if(data && data.xp){
+                    document.getElementById('earnedXP').textContent = data.xp;
+                    const xpEl = document.getElementById('currentXP');
+                    if(xpEl){
+                        const cur = parseInt(xpEl.textContent) || 0;
+                        xpEl.textContent = cur + Number(data.xp);
+                    }
+                    // If coming from adventure, redirect back with completion marker
+                    if(loc !== null && level !== null) {
+                        setTimeout(() => {
+                            window.location.href = `/begin/?completed=${loc},${level}`;
+                        }, 3000);
+                    }
+                }
+                if(data && data.accuracy !== undefined){
+                    document.getElementById('accuracyPercent').textContent = data.accuracy;
+                }
+                document.getElementById('correctCount').textContent = correctClicks;
+                document.getElementById('totalCount').textContent = maxRounds;
+                resultsDiv.style.display = 'block';
+            }).catch(()=>{
+                document.getElementById('correctCount').textContent = correctClicks;
+                document.getElementById('totalCount').textContent = maxRounds;
+                const acc = Math.round((correctClicks / maxRounds) * 100);
+                document.getElementById('accuracyPercent').textContent = acc;
+                document.getElementById('earnedXP').textContent = '—';
+                resultsDiv.style.display = 'block';
+            });
+        }
+    })();
+    </script>
+</body>
+</html>

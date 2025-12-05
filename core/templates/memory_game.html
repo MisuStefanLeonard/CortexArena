@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Memorie — Cortex Arena</title>
+    <style>
+        :root{--bg:#0b1220;--card:#0f1724;--accent:#ff8c00;--muted:#9aa7b2}
+        body{font-family:Inter, Arial, sans-serif;margin:0;background:linear-gradient(160deg,#0b1220,#081123);color:#fff;}
+        .wrap{max-width:1000px;margin:28px auto;padding:18px}
+        header{display:flex;align-items:center;justify-content:space-between}
+        header h1{margin:0;font-size:20px}
+        .controls{display:flex;gap:10px;align-items:center}
+        .btn{background:var(--accent);color:#111;padding:8px 12px;border-radius:8px;text-decoration:none;font-weight:700}
+        .board{display:grid;gap:12px;margin-top:18px}
+        .card{background:rgba(255,255,255,0.04);border-radius:8px;height:90px;display:flex;align-items:center;justify-content:center;font-size:28px;cursor:pointer;user-select:none;transform-style:preserve-3d;position:relative}
+        .card.face-down{background:linear-gradient(180deg,#081224,#0b2238)}
+        .card.matched{background:linear-gradient(90deg,#06312a,#0b3d2d);opacity:0.95;cursor:default}
+        .status{margin-top:12px;color:var(--muted)}
+        @media(min-width:700px){
+            .board.small{grid-template-columns:repeat(4,1fr)}
+            .board.medium{grid-template-columns:repeat(6,1fr)}
+            .board.large{grid-template-columns:repeat(6,1fr)}
+            .card{height:110px}
+        }
+        @media(max-width:699px){
+            .board.small{grid-template-columns:repeat(3,1fr)}
+            .board.medium{grid-template-columns:repeat(4,1fr)}
+            .board.large{grid-template-columns:repeat(4,1fr)}
+        }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <header>
+            <h1>Memorie — Găsește perechile</h1>
+            <div class="controls">
+                    <a class="btn" href="/">Înapoi</a>
+                    <label style="color:var(--muted);display:flex;align-items:center;gap:8px">
+                        <span>Dificultate:</span>
+                        <select id="difficultySelect">
+                            <option value="easy" {% if difficulty == 'easy' %}selected{% endif %}>Easy</option>
+                            <option value="medium" {% if difficulty == 'medium' %}selected{% endif %}>Medium</option>
+                            <option value="hard" {% if difficulty == 'hard' %}selected{% endif %}>Hard</option>
+                        </select>
+                    </label>
+                    <a class="btn" id="startBtn" href="#">Start</a>
+                    <div style="color:var(--muted);font-weight:700">XP: <span id="currentXP">{{ user_summary.xp_total }}</span></div>
+                </div>
+        </header>
+
+        <div class="status">
+            <span id="moves">Mutări: 0</span> • <span id="matches">Perechi găsite: 0</span>
+        </div>
+
+        <div id="board" class="board"></div>
+
+        <div class="status" id="endMessage" style="display:none;margin-top:14px"></div>
+    </div>
+
+    <script>
+    (function(){
+        const pairs = {{ pairs }}; // number of pairs passed from view
+        const difficulty = '{{ difficulty }}';
+        const loc = new URLSearchParams(window.location.search).get('loc');
+        const level = new URLSearchParams(window.location.search).get('level');
+
+        // a set of emojis to use as card faces
+        const EMOJIS = ['🧠','🍎','🚀','🎯','⭐️','🌙','🔥','💧','🍀','⚡️','🎵','🏆','🐶','🐱','🦊','🐼','🍓','🥑','🍇','🍉','🍒','🥇','📚','🧩'];
+
+        // pick the first `pairs` emojis
+        const faces = EMOJIS.slice(0, pairs);
+
+        // build deck: duplicate faces and shuffle
+        let deck = faces.concat(faces);
+        function shuffle(a){
+            for(let i=a.length-1;i>0;i--){
+                const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];
+            }
+            return a;
+        }
+        deck = shuffle(deck);
+
+        // choose board class to control columns
+        const board = document.getElementById('board');
+        if(pairs <= 6) board.classList.add('small');
+        else if(pairs <= 9) board.classList.add('medium');
+        else board.classList.add('large');
+
+        let first = null;
+        let second = null;
+        let lock = false;
+        let moves = 0;
+        let matches = 0;
+
+        function render(){
+            board.innerHTML = '';
+            deck.forEach((face, idx)=>{
+                const el = document.createElement('div');
+                el.className = 'card face-down';
+                el.dataset.face = face;
+                el.dataset.idx = idx;
+                el.textContent = '';
+                el.addEventListener('click', ()=>onFlip(el));
+                board.appendChild(el);
+            });
+        }
+
+        function onFlip(el){
+            if(lock || el.classList.contains('matched') || el===first) return;
+            // show
+            el.classList.remove('face-down');
+            el.textContent = el.dataset.face;
+
+            if(!first){
+                first = el; return;
+            }
+            second = el;
+            moves++; updateStatus();
+            if(first.dataset.face === second.dataset.face){
+                // match
+                first.classList.add('matched');
+                second.classList.add('matched');
+                matches++; resetTurn(true);
+            } else {
+                lock = true;
+                setTimeout(()=>{resetTurn(false);}, 800);
+            }
+        }
+
+        function resetTurn(matched){
+            if(!matched){
+                first.classList.add('face-down'); first.textContent = '';
+                second.classList.add('face-down'); second.textContent = '';
+            }
+            first = null; second = null; lock = false;
+            updateStatus();
+            if(matches >= pairs){
+                showEnd();
+            }
+        }
+
+        function updateStatus(){
+            document.getElementById('moves').textContent = 'Mutări: '+moves;
+            document.getElementById('matches').textContent = 'Perechi găsite: '+matches+' / '+pairs;
+        }
+
+        function showEnd(){
+            const msg = document.getElementById('endMessage');
+            msg.style.display = 'block';
+            msg.innerHTML = `<strong>Felicitări!</strong> Ai terminat în ${moves} mutări.`;
+        }
+
+        // timer
+        let timer = 0; // seconds
+        let timerInterval = null;
+        const timerEl = document.createElement('div');
+        timerEl.style.color = 'var(--muted)';
+        timerEl.style.marginTop = '8px';
+        timerEl.id = 'timer';
+        timerEl.textContent = 'Timp: 0s';
+        document.querySelector('.wrap').insertBefore(timerEl, document.getElementById('board'));
+
+        function startTimer(){
+            if(timerInterval) return;
+            timerInterval = setInterval(()=>{ timer++; timerEl.textContent = 'Timp: '+timer+'s'; }, 1000);
+        }
+        function stopTimer(){ if(timerInterval){ clearInterval(timerInterval); timerInterval=null; } }
+
+        // start button: reloads board with selected difficulty (re-init deck)
+        document.getElementById('startBtn').addEventListener('click', function(e){
+            e.preventDefault();
+            const sel = document.getElementById('difficultySelect').value;
+            window.location.search = '?difficulty=' + encodeURIComponent(sel);
+        });
+
+        // start timer on first flip
+        const originalOnFlip = onFlip;
+        window.onFlip = function(el){
+            if(!timerInterval) startTimer();
+            originalOnFlip(el);
+        }
+
+        // override click listeners to use window.onFlip (so timer starts)
+        function render(){
+            board.innerHTML = '';
+            deck.forEach((face, idx)=>{
+                const el = document.createElement('div');
+                el.className = 'card face-down';
+                el.dataset.face = face;
+                el.dataset.idx = idx;
+                el.textContent = '';
+                el.addEventListener('click', ()=>window.onFlip(el));
+                board.appendChild(el);
+            });
+        }
+
+        // submit result to server
+        function getCookie(name){
+            let v = null;
+            if(document.cookie && document.cookie !== ''){
+                const cookies = document.cookie.split(';');
+                for(let i=0;i<cookies.length;i++){
+                    const c = cookies[i].trim();
+                    if(c.substring(0, name.length + 1) === (name + '=')){
+                        v = decodeURIComponent(c.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return v;
+        }
+
+        function submitResult(){
+            stopTimer();
+            const csrftoken = getCookie('csrftoken');
+            fetch('/play/memory/submit/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrftoken
+                },
+                body: JSON.stringify({ pairs: pairs, moves: moves, time_spent_sec: timer, difficulty: difficulty })
+            }).then(r=>r.json()).then(data=>{
+                const msg = document.getElementById('endMessage');
+                if(data && data.xp){
+                    msg.innerHTML = `<strong>Felicitări!</strong> Ai terminat în ${moves} mutări. XP câștigate: ${data.xp}`;
+                    // update visible XP
+                    const xpEl = document.getElementById('currentXP');
+                    if(xpEl){
+                        const cur = parseInt(xpEl.textContent) || 0;
+                        xpEl.textContent = cur + Number(data.xp);
+                    }
+                    // If coming from adventure, redirect back with completion marker
+                    if(loc !== null && level !== null) {
+                        setTimeout(() => {
+                            window.location.href = `/begin/?completed=${loc},${level}`;
+                        }, 2000);
+                    }
+                } else if(data && data.error){
+                    msg.innerHTML = `<strong>Felicitări!</strong> Ai terminat în ${moves} mutări. (Nu s-a putut salva scorul)`;
+                } else {
+                    msg.innerHTML = `<strong>Felicitări!</strong> Ai terminat în ${moves} mutări.`;
+                }
+            }).catch(()=>{
+                const msg = document.getElementById('endMessage');
+                msg.innerHTML = `<strong>Felicitări!</strong> Ai terminat în ${moves} mutări.`;
+            });
+        }
+
+        // update resetTurn to submit when done
+        const origReset = resetTurn;
+        resetTurn = function(matched){
+            origReset(matched);
+            if(matches >= pairs){ submitResult(); }
+        }
+
+        render();
+    })();
+    </script>
+</body>
+</html>

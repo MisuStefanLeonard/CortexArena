@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Reacție — Cortex Arena</title>
+    <style>
+        :root{--bg:#0b1220;--card:#0f1724;--accent:#ff8c00;--muted:#9aa7b2;--green:#10b981;--red:#ef4444}
+        body{font-family:Inter, Arial, sans-serif;margin:0;background:linear-gradient(160deg,#0b1220,#081123);color:#fff;}
+        .wrap{max-width:900px;margin:28px auto;padding:18px}
+        header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+        header h1{margin:0;font-size:20px}
+        .controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+        .btn{background:var(--accent);color:#111;padding:8px 12px;border-radius:8px;text-decoration:none;font-weight:700;cursor:pointer;border:none;font-size:14px}
+        .btn:disabled{opacity:0.5;cursor:not-allowed}
+        .status{margin-top:12px;color:var(--muted);display:flex;gap:18px;flex-wrap:wrap}
+        .game-area{margin-top:22px;min-height:320px;background:rgba(255,255,255,0.03);border-radius:12px;padding:28px;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative}
+        .prompt{font-size:18px;text-align:center;color:var(--muted)}
+        .target{width:120px;height:120px;border-radius:50%;background:var(--green);cursor:pointer;box-shadow:0 4px 12px rgba(16,185,129,0.4);transition:transform 0.1s;position:absolute}
+        .target:hover{transform:scale(1.05)}
+        .target.red{background:var(--red);box-shadow:0 4px 12px rgba(239,68,68,0.4)}
+        .results{margin-top:18px;background:rgba(255,255,255,0.05);padding:14px;border-radius:8px}
+        .results h3{margin:0 0 8px 0}
+        .rt-list{display:flex;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <header>
+            <h1>Reacție — Testează-ți viteza</h1>
+            <div class="controls">
+                <a class="btn" href="/">Înapoi</a>
+                <label style="color:var(--muted);display:flex;align-items:center;gap:8px">
+                    <span>Dificultate:</span>
+                    <select id="difficultySelect">
+                        <option value="easy" {% if difficulty == 'easy' %}selected{% endif %}>Easy (5 încercări)</option>
+                        <option value="medium" {% if difficulty == 'medium' %}selected{% endif %}>Medium (8 încercări)</option>
+                        <option value="hard" {% if difficulty == 'hard' %}selected{% endif %}>Hard (12 încercări)</option>
+                    </select>
+                </label>
+                <button class="btn" id="startBtn">Start</button>
+                <div style="color:var(--muted);font-weight:700">XP: <span id="currentXP">{{ user_summary.xp_total }}</span></div>
+            </div>
+        </header>
+
+        <div class="status">
+            <span id="trialCounter">Încercare: 0 / {{ trials }}</span>
+            <span id="timer">Timp total: 0s</span>
+        </div>
+
+        <div class="game-area" id="gameArea">
+            <div class="prompt" id="prompt">Apasă „Start" pentru a începe testul de reacție.</div>
+        </div>
+
+        <div class="results" id="results" style="display:none">
+            <h3>Rezultate</h3>
+            <p>Timp mediu de reacție: <strong id="avgRT">0</strong> ms</p>
+            <p>XP câștigate: <strong id="earnedXP">0</strong></p>
+            <div class="rt-list" id="rtList"></div>
+        </div>
+    </div>
+
+    <script>
+    (function(){
+        const maxTrials = {{ trials }};
+        const difficulty = '{{ difficulty }}';
+        const loc = new URLSearchParams(window.location.search).get('loc');
+        const level = new URLSearchParams(window.location.search).get('level');
+
+        let state = 'idle'; // idle | waiting | ready | clicked | finished
+        let currentTrial = 0;
+        let reactionTimes = [];
+        let startTime = 0;
+        let globalTimer = 0;
+        let globalInterval = null;
+        let waitTimeout = null;
+
+        const gameArea = document.getElementById('gameArea');
+        const prompt = document.getElementById('prompt');
+        const startBtn = document.getElementById('startBtn');
+        const diffSelect = document.getElementById('difficultySelect');
+        const trialCounter = document.getElementById('trialCounter');
+        const timerEl = document.getElementById('timer');
+        const resultsDiv = document.getElementById('results');
+
+        startBtn.addEventListener('click', startGame);
+        diffSelect.addEventListener('change', function(){
+            window.location.search = '?difficulty=' + encodeURIComponent(diffSelect.value);
+        });
+
+        function startGame(){
+            state = 'idle';
+            currentTrial = 0;
+            reactionTimes = [];
+            globalTimer = 0;
+            resultsDiv.style.display = 'none';
+            startBtn.disabled = true;
+            diffSelect.disabled = true;
+            updateCounter();
+            if(globalInterval) clearInterval(globalInterval);
+            globalInterval = setInterval(()=>{ globalTimer++; timerEl.textContent = 'Timp total: '+globalTimer+'s'; }, 1000);
+            nextTrial();
+        }
+
+        function nextTrial(){
+            if(currentTrial >= maxTrials){
+                finishGame();
+                return;
+            }
+            currentTrial++;
+            updateCounter();
+            state = 'waiting';
+            prompt.textContent = 'Așteaptă...';
+            gameArea.style.cursor = 'default';
+            
+            // Allow clicks during waiting to detect early clicks
+            gameArea.onclick = function(){
+                handleEarlyClick();
+            };
+
+            // random delay 1-4s before showing target
+            const delay = 1000 + Math.random() * 3000;
+            waitTimeout = setTimeout(showTarget, delay);
+        }
+
+        function handleEarlyClick(){
+            if(state !== 'waiting') return;
+            // Penalize: skip this trial, show red feedback
+            clearTimeout(waitTimeout);
+            state = 'early_click';
+            prompt.textContent = '❌ Prea repede! Așteaptă cercul verde.';
+            prompt.style.color = 'var(--red)';
+            prompt.style.fontSize = '22px';
+            
+            // Show red flash on game area
+            const flash = document.createElement('div');
+            flash.style.position = 'absolute';
+            flash.style.inset = '0';
+            flash.style.background = 'rgba(239,68,68,0.2)';
+            flash.style.borderRadius = '12px';
+            flash.style.pointerEvents = 'none';
+            gameArea.appendChild(flash);
+            setTimeout(()=>{ if(flash.parentNode) flash.remove(); }, 400);
+            
+            // Reset prompt style and continue to next trial
+            setTimeout(()=>{
+                prompt.style.color = 'var(--muted)';
+                prompt.style.fontSize = '18px';
+                nextTrial();
+            }, 1200);
+        }
+
+        function showTarget(){
+            state = 'ready';
+            prompt.textContent = '';
+            gameArea.onclick = null;
+            
+            // Random position within game area bounds
+            const areaRect = gameArea.getBoundingClientRect();
+            const targetSize = 120;
+            const maxX = areaRect.width - targetSize - 56; // padding consideration
+            const maxY = areaRect.height - targetSize - 56;
+            const randX = Math.random() * Math.max(0, maxX);
+            const randY = Math.random() * Math.max(0, maxY);
+            
+            // create target circle at random position
+            const target = document.createElement('div');
+            target.className = 'target';
+            target.style.left = randX + 'px';
+            target.style.top = randY + 'px';
+            gameArea.appendChild(target);
+            startTime = Date.now();
+            target.onclick = function(e){
+                e.stopPropagation();
+                handleClick();
+            };
+        }
+
+        function handleClick(){
+            if(state !== 'ready') return;
+            const rt = Date.now() - startTime;
+            reactionTimes.push(rt);
+            state = 'clicked';
+            // clear target
+            const target = gameArea.querySelector('.target');
+            if(target) target.remove();
+            prompt.textContent = `Reacție: ${rt} ms`;
+            setTimeout(nextTrial, 600);
+        }
+
+        function updateCounter(){
+            trialCounter.textContent = `Încercare: ${currentTrial} / ${maxTrials}`;
+        }
+
+        function finishGame(){
+            if(globalInterval){ clearInterval(globalInterval); globalInterval=null; }
+            state = 'finished';
+            startBtn.disabled = false;
+            diffSelect.disabled = false;
+            prompt.textContent = 'Test finalizat!';
+            submitResult();
+        }
+
+        function getCookie(name){
+            let v = null;
+            if(document.cookie && document.cookie !== ''){
+                const cookies = document.cookie.split(';');
+                for(let i=0;i<cookies.length;i++){
+                    const c = cookies[i].trim();
+                    if(c.substring(0, name.length + 1) === (name + '=')){
+                        v = decodeURIComponent(c.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return v;
+        }
+
+        function submitResult(){
+            const csrftoken = getCookie('csrftoken');
+            fetch('/play/reaction/submit/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrftoken
+                },
+                body: JSON.stringify({ trials: maxTrials, reaction_times: reactionTimes, time_spent_sec: globalTimer, difficulty: difficulty })
+            }).then(r=>r.json()).then(data=>{
+                if(data && data.xp){
+                    document.getElementById('earnedXP').textContent = data.xp;
+                    const xpEl = document.getElementById('currentXP');
+                    if(xpEl){
+                        const cur = parseInt(xpEl.textContent) || 0;
+                        xpEl.textContent = cur + Number(data.xp);
+                    }
+                    // If coming from adventure, redirect back with completion marker
+                    if(loc !== null && level !== null) {
+                        setTimeout(() => {
+                            window.location.href = `/begin/?completed=${loc},${level}`;
+                        }, 3000);
+                    }
+                }
+                if(data && data.avg_reaction_time){
+                    document.getElementById('avgRT').textContent = data.avg_reaction_time;
+                }
+                // show individual times
+                const rtListEl = document.getElementById('rtList');
+                rtListEl.innerHTML = '';
+                reactionTimes.forEach((rt, idx)=>{
+                    const span = document.createElement('span');
+                    span.textContent = `#${idx+1}: ${rt}ms`;
+                    span.style.padding = '4px 8px';
+                    span.style.background = 'rgba(255,255,255,0.08)';
+                    span.style.borderRadius = '4px';
+                    rtListEl.appendChild(span);
+                });
+                resultsDiv.style.display = 'block';
+            }).catch(()=>{
+                resultsDiv.style.display = 'block';
+                document.getElementById('earnedXP').textContent = '—';
+                document.getElementById('avgRT').textContent = reactionTimes.length ? Math.round(reactionTimes.reduce((a,b)=>a+b,0)/reactionTimes.length) : 0;
+            });
+        }
+    })();
+    </script>
+</body>
+</html>
