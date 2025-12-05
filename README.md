@@ -257,8 +257,8 @@ This project is licensed under the MIT License - see LICENSE file for details.
 ## 👨‍💻 Author
 
 **Rares Cristache**
-- GitHub: [@yourusername](https://github.com/yourusername)
-- Email: your.email@example.com
+- GitHub: [@KanekiLor](https://github.com/KanekiLor)
+- Email: reas12342@gmail.com
 
 ## 🙏 Acknowledgments
 
@@ -271,7 +271,7 @@ This project is licensed under the MIT License - see LICENSE file for details.
 
 For issues, questions, or suggestions:
 - Open an issue on GitHub
-- Contact: your.email@example.com
+- Contact: reas12342@gmail.com
 
 ---
 
