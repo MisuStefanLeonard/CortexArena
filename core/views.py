@@ -586,6 +586,116 @@ def submit_attention(request):
     return JsonResponse({'xp': xp, 'accuracy': round(accuracy * 100, 1)})
 
 
+@method_decorator(login_required, name='dispatch')
+class PlayCupShuffleView(TemplateView):
+    """Cup shuffle (shell game) combining attention and memory.
+
+    Difficulty scales cups, rounds, and shuffle speed.
+    """
+
+    template_name = 'cup_shuffle_game.html'
+
+    DIFFICULTY_SETTINGS = {
+        'easy':   {'cups': 3, 'rounds': 5, 'swap_speed_ms': 900, 'swaps_per_round': 8},
+        'medium': {'cups': 4, 'rounds': 7, 'swap_speed_ms': 650, 'swaps_per_round': 12},
+        'hard':   {'cups': 5, 'rounds': 9, 'swap_speed_ms': 500, 'swaps_per_round': 16},
+    }
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        difficulty = self.request.GET.get('difficulty', 'easy')
+        settings = self.DIFFICULTY_SETTINGS.get(difficulty, self.DIFFICULTY_SETTINGS['easy'])
+
+        ctx.update({
+            'difficulty': difficulty,
+            'cups_count': settings['cups'],
+            'rounds': settings['rounds'],
+            'swap_speed_ms': settings['swap_speed_ms'],
+            'swaps_per_round': settings['swaps_per_round'],
+        })
+
+        user = getattr(self.request, 'user', None)
+        if user and getattr(user, 'is_authenticated', False):
+            ctx['user_summary'] = {
+                'username': getattr(user, 'username', 'Invitat'),
+                'level': getattr(user, 'level', 1),
+                'xp_total': getattr(user, 'xp_total', 0),
+                'streak_days': getattr(user, 'streak_days', 0),
+            }
+        else:
+            ctx['user_summary'] = {
+                'username': 'Invitat',
+                'level': 1,
+                'xp_total': 0,
+                'streak_days': 0,
+            }
+
+        ctx['now'] = timezone.now()
+        return ctx
+
+
+@require_POST
+def submit_cup_shuffle(request):
+    """Accepts JSON POST with: total_rounds, correct_guesses, time_spent_sec, swap_speed_ms, difficulty."""
+    try:
+        payload = json.loads(request.body.decode('utf-8'))
+    except Exception:
+        return JsonResponse({'error': 'invalid json'}, status=400)
+
+    total_rounds = int(payload.get('total_rounds', 0))
+    correct_guesses = int(payload.get('correct_guesses', 0))
+    time_spent = int(payload.get('time_spent_sec', 0))
+    swap_speed_ms = int(payload.get('swap_speed_ms', 800))
+    difficulty = payload.get('difficulty', 'easy')
+
+    accuracy = correct_guesses / max(1, total_rounds) if total_rounds > 0 else 0
+
+    base = max(15, total_rounds * 14)
+    accuracy_mult = accuracy  # 0..1
+
+    ideal_speed = {'easy': 900, 'medium': 700, 'hard': 550}.get(difficulty, 900)
+    speed_eff = ideal_speed / max(1, swap_speed_ms)
+    speed_eff = max(0.6, min(speed_eff, 1.6))
+
+    ideal_time_per_round = {'easy': 6, 'medium': 5, 'hard': 4}.get(difficulty, 6)
+    ideal_total = ideal_time_per_round * max(1, total_rounds)
+    time_eff = ideal_total / max(1, time_spent) if time_spent > 0 else 0.5
+    time_eff = max(0.4, min(time_eff, 1.8))
+
+    difficulty_mul = {'easy': 1.0, 'medium': 1.4, 'hard': 1.9}.get(difficulty, 1.0)
+
+    xp = int(base * accuracy_mult * speed_eff * time_eff * difficulty_mul)
+    xp = max(1, xp)
+
+    user = getattr(request, 'user', None)
+    if user and getattr(user, 'is_authenticated', False):
+        try:
+            user.xp_total = getattr(user, 'xp_total', 0) + xp
+            user.save(update_fields=['xp_total'])
+            user.check_level_up()
+
+            score = int(accuracy * 1000)
+            update_weekly_stats(user, 'SHF', difficulty, xp, score, accuracy, time_spent)
+        except Exception:
+            pass
+
+        try:
+            from .models import Session, SessionGame, Game, GameType
+
+            gt, _ = GameType.objects.get_or_create(name=GameType.SHUFFLE)
+            game, _ = Game.objects.get_or_create(name='Pahare', game_type=gt, defaults={'difficulty': 'easy', 'config_data': {}})
+
+            now = timezone.now()
+            start = now - timedelta(seconds=time_spent)
+            score = int(accuracy * 1000)
+            session = Session.objects.create(user=user, start_time=start, end_time=now, total_score=score, xp_gained=xp)
+            SessionGame.objects.create(session=session, game=game, score=score, accuracy=accuracy, time_spent_sec=time_spent)
+        except Exception:
+            pass
+
+    return JsonResponse({'xp': xp, 'accuracy': round(accuracy * 100, 1)})
+
+
 # Authentication Views
 
 class LoginView(View):

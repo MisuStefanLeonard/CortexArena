@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Pahare — Cortex Arena</title>
+    <style>
+        :root{
+            --bg:#0b1220;
+            --card:#0f1724;
+            --accent:#ff8c00;
+            --muted:#9aa7b2;
+            --green:#10b981;
+            --red:#ef4444;
+            --blue:#3b82f6;
+        }
+        body{font-family:Inter, Arial, sans-serif;margin:0;background:linear-gradient(135deg,#1e3c72 0%,#2a5298 100%);color:#fff;}
+        .wrap{max-width:1000px;margin:28px auto;padding:18px}
+        header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+        header h1{margin:0;font-size:20px}
+        .controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+        .btn{background:var(--accent);color:#111;padding:10px 14px;border-radius:10px;text-decoration:none;font-weight:700;cursor:pointer;border:none;font-size:14px;box-shadow:0 6px 18px rgba(0,0,0,0.28)}
+        .btn:disabled{opacity:0.5;cursor:not-allowed}
+        select{
+            appearance:none;-webkit-appearance:none;-moz-appearance:none;
+            background: linear-gradient(120deg, rgba(0,212,255,0.16), rgba(42,82,152,0.38));
+            border:1px solid rgba(255,255,255,0.22);
+            color:#fff;
+            padding:10px 38px 10px 12px;
+            border-radius:10px;
+            font-weight:700;
+            box-shadow:0 6px 18px rgba(0,0,0,0.28);
+            cursor:pointer;
+            transition:border-color 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease;
+            background-repeat:no-repeat;
+            background-position:calc(100% - 18px) 55%, calc(100% - 12px) 55%;
+            background-size:6px 6px, 6px 6px;
+            background-image: linear-gradient(45deg, transparent 50%, #ffd27a 50%), linear-gradient(135deg, #ffd27a 50%, transparent 50%);
+        }
+        select:hover{border-color:rgba(255,255,255,0.4);box-shadow:0 10px 24px rgba(0,0,0,0.34);transform:translateY(-1px)}
+        select:focus{outline:none;border-color:rgba(0,212,255,0.78);box-shadow:0 0 0 3px rgba(0,212,255,0.24)}
+        select option{color:#0b1220;background:#f8fafc}
+        .status{margin-top:12px;color:var(--muted);display:flex;gap:18px;flex-wrap:wrap}
+        .arena{margin-top:22px;background:rgba(255,255,255,0.04);border-radius:14px;padding:28px;min-height:360px;position:relative;overflow:hidden;box-shadow:0 8px 22px rgba(0,0,0,0.32)}
+        .cups-area{position:relative;height:240px;margin-top:12px}
+        .cup{width:120px;height:140px;background:linear-gradient(160deg,#0f1724,#16223a);border:2px solid rgba(255,255,255,0.08);border-radius:12px 12px 6px 6px;position:absolute;left:50%;top:40px;display:flex;align-items:flex-end;justify-content:center;transition:transform var(--speed) ease, filter 0.2s ease, border-color 0.2s ease;box-shadow:0 8px 20px rgba(0,0,0,0.35)}
+        .cup::before{content:'';position:absolute;top:-10px;left:10px;right:10px;height:16px;border-radius:12px;background:linear-gradient(90deg,#182743,#0f1724);box-shadow:0 4px 10px rgba(0,0,0,0.35)}
+        .cup .ball{position:absolute;bottom:10px;width:24px;height:24px;border-radius:50%;background:radial-gradient(circle at 30% 30%, #ffd27a, #ff8c00);box-shadow:0 4px 12px rgba(255,140,0,0.5);opacity:1;transition:opacity 0.25s ease}
+        .cup.ball-hidden .ball{opacity:0}
+        .cup.guessable{cursor:pointer}
+        .cup.correct{border-color:rgba(16,185,129,0.7);filter:drop-shadow(0 0 12px rgba(16,185,129,0.5))}
+        .cup.wrong{border-color:rgba(239,68,68,0.7);filter:drop-shadow(0 0 12px rgba(239,68,68,0.4))}
+        .message{color:var(--muted);text-align:center;font-size:15px;margin-top:12px}
+        .results{margin-top:18px;background:rgba(255,255,255,0.05);padding:14px;border-radius:10px;display:none}
+        .results h3{margin:0 0 8px 0}
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <header>
+            <h1>Pahare — Atenție + Memorie</h1>
+            <div class="controls">
+                <a class="btn" href="/">Înapoi</a>
+                <label style="color:var(--muted);display:flex;align-items:center;gap:8px">
+                    <span>Dificultate:</span>
+                    <select id="difficultySelect">
+                        <option value="easy" {% if difficulty == 'easy' %}selected{% endif %}>Easy</option>
+                        <option value="medium" {% if difficulty == 'medium' %}selected{% endif %}>Medium</option>
+                        <option value="hard" {% if difficulty == 'hard' %}selected{% endif %}>Hard</option>
+                    </select>
+                </label>
+                <button class="btn" id="startBtn">Start</button>
+                <div style="color:var(--muted);font-weight:700">XP: <span id="currentXP">{{ user_summary.xp_total }}</span></div>
+            </div>
+        </header>
+
+        <div class="status">
+            <span id="roundCounter">Rundă: 0 / {{ rounds }}</span>
+            <span id="timer">Timp: 0s</span>
+            <span id="scoreCounter">Corecte: 0</span>
+            <span id="speedInfo">Viteză shuffle: {{ swap_speed_ms }}ms</span>
+        </div>
+
+        <div class="arena">
+            <div class="message" id="message">Apasă „Start" și urmărește cupa cu bila.</div>
+            <div class="cups-area" id="cupsArea"></div>
+        </div>
+
+        <div class="results" id="results">
+            <h3>Rezultate</h3>
+            <p>Click-uri corecte: <strong id="correctCount">0</strong> / <strong id="totalCount">0</strong></p>
+            <p>Acuratețe: <strong id="accuracyPercent">0</strong>%</p>
+            <p>XP câștigate: <strong id="earnedXP">0</strong></p>
+        </div>
+    </div>
+
+    <script>
+    (function(){
+        const roundsTotal = {{ rounds }};
+        const cupsCount = {{ cups_count }};
+        const swapSpeed = {{ swap_speed_ms }};
+        const swapsPerRound = {{ swaps_per_round }};
+        const difficulty = '{{ difficulty }}';
+        const loc = new URLSearchParams(window.location.search).get('loc');
+        const level = new URLSearchParams(window.location.search).get('level');
+
+        let currentRound = 0;
+        let correctGuesses = 0;
+        let state = 'idle';
+        let globalTimer = 0;
+        let globalInterval = null;
+        let targetIndex = 0;
+        let positions = [];
+
+        const cupsArea = document.getElementById('cupsArea');
+        const roundCounter = document.getElementById('roundCounter');
+        const timerEl = document.getElementById('timer');
+        const scoreCounter = document.getElementById('scoreCounter');
+        const messageEl = document.getElementById('message');
+        const startBtn = document.getElementById('startBtn');
+        const diffSelect = document.getElementById('difficultySelect');
+        const resultsDiv = document.getElementById('results');
+
+        diffSelect.addEventListener('change', function(){
+            window.location.search = '?difficulty=' + encodeURIComponent(diffSelect.value);
+        });
+        startBtn.addEventListener('click', startGame);
+
+        function layoutPositions(){
+            positions = Array.from({length: cupsCount}, (_, i) => i);
+            const areaWidth = cupsArea.clientWidth || 800;
+            const gap = Math.min(140, Math.max(100, areaWidth / Math.max(3, cupsCount + 1)));
+            positions = positions.map(i => ((i - (cupsCount - 1)/2) * gap));
+        }
+
+        function renderCups(){
+            cupsArea.innerHTML = '';
+            layoutPositions();
+            for(let i=0;i<cupsCount;i++){
+                const cup = document.createElement('div');
+                cup.className = 'cup ball-hidden';
+                cup.dataset.index = i;
+                cup.style.setProperty('--speed', swapSpeed+'ms');
+                cup.style.transform = `translate(-50%, 0) translateX(${positions[i]}px)`;
+                const ball = document.createElement('div');
+                ball.className = 'ball';
+                cup.appendChild(ball);
+                cupsArea.appendChild(cup);
+            }
+        }
+
+        function startGame(){
+            currentRound = 0;
+            correctGuesses = 0;
+            state = 'playing';
+            resultsDiv.style.display = 'none';
+            startBtn.disabled = true;
+            diffSelect.disabled = true;
+            if(globalInterval) clearInterval(globalInterval);
+            globalTimer = 0;
+            timerEl.textContent = 'Timp: 0s';
+            globalInterval = setInterval(()=>{
+                globalTimer++;
+                timerEl.textContent = 'Timp: '+globalTimer+'s';
+            }, 1000);
+            renderCups();
+            nextRound();
+        }
+
+        function nextRound(){
+            if(currentRound >= roundsTotal){
+                finishGame();
+                return;
+            }
+            currentRound++;
+            updateCounters();
+            playRound();
+        }
+
+        function playRound(){
+            state = 'reveal';
+            targetIndex = Math.floor(Math.random() * cupsCount);
+            messageEl.textContent = 'Memorează cupa cu bila!';
+            const cups = document.querySelectorAll('.cup');
+            layoutPositions();
+            cups.forEach((c, idx)=>{
+                c.style.transform = `translate(-50%, 0) translateX(${positions[idx]}px)`;
+            });
+            cups.forEach(c => c.classList.add('ball-hidden'));
+            const targetCup = cups[targetIndex];
+            targetCup.classList.remove('ball-hidden');
+
+            setTimeout(()=>{
+                cups.forEach(c => c.classList.add('ball-hidden'));
+                shuffleCups(cups).then(()=>{
+                    state = 'guess';
+                    messageEl.textContent = 'Ghiceste cupa! Click pe cea corectă.';
+                    cups.forEach(c => {
+                        c.classList.add('guessable');
+                        c.onclick = ()=>handleGuess(Number(c.dataset.index));
+                    });
+                });
+            }, 1100);
+        }
+
+        function shuffleCups(cups){
+            return new Promise(resolve => {
+                let swapsDone = 0;
+                const doSwap = ()=>{
+                    if(swapsDone >= swapsPerRound){
+                        resolve();
+                        return;
+                    }
+                    const a = Math.floor(Math.random() * cupsCount);
+                    let b = Math.floor(Math.random() * cupsCount);
+                    if(a === b) b = (b + 1) % cupsCount;
+                    [positions[a], positions[b]] = [positions[b], positions[a]];
+                    cups.forEach((cup, idx)=>{
+                        const newPos = positions[idx];
+                        cup.style.transform = `translate(-50%, 0) translateX(${newPos}px)`;
+                    });
+                    swapsDone++;
+                    setTimeout(doSwap, swapSpeed);
+                };
+                doSwap();
+            });
+        }
+
+        function handleGuess(idx){
+            if(state !== 'guess') return;
+            state = 'locked';
+            const cups = document.querySelectorAll('.cup');
+            cups.forEach(c => { c.onclick = null; c.classList.remove('guessable'); });
+
+            const targetCup = cups[targetIndex];
+            targetCup.classList.remove('ball-hidden');
+
+            if(idx === targetIndex){
+                correctGuesses++;
+                messageEl.textContent = '✓ Corect!';
+                targetCup.classList.add('correct');
+            } else {
+                messageEl.textContent = '✗ Greșit! Bila era aici.';
+                targetCup.classList.add('correct');
+                const wrongCup = cups[idx];
+                if(wrongCup) wrongCup.classList.add('wrong');
+            }
+            updateCounters();
+            setTimeout(()=>{
+                cups.forEach(c => c.classList.remove('correct','wrong'));
+                nextRound();
+            }, 1000);
+        }
+
+        function finishGame(){
+            state = 'finished';
+            startBtn.disabled = false;
+            diffSelect.disabled = false;
+            if(globalInterval){ clearInterval(globalInterval); globalInterval = null; }
+            messageEl.textContent = 'Test finalizat!';
+            submitResult();
+        }
+
+        function updateCounters(){
+            roundCounter.textContent = `Rundă: ${currentRound} / ${roundsTotal}`;
+            scoreCounter.textContent = `Corecte: ${correctGuesses}`;
+        }
+
+        function getCookie(name){
+            let v = null;
+            if(document.cookie && document.cookie !== ''){
+                const cookies = document.cookie.split(';');
+                for(let i=0;i<cookies.length;i++){
+                    const c = cookies[i].trim();
+                    if(c.substring(0, name.length + 1) === (name + '=')){
+                        v = decodeURIComponent(c.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return v;
+        }
+
+        function submitResult(){
+            const csrftoken = getCookie('csrftoken');
+            fetch('/play/cups/submit/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrftoken
+                },
+                body: JSON.stringify({
+                    total_rounds: roundsTotal,
+                    correct_guesses: correctGuesses,
+                    time_spent_sec: globalTimer,
+                    swap_speed_ms: swapSpeed,
+                    difficulty: difficulty
+                })
+            }).then(r=>r.json()).then(data=>{
+                const acc = Math.round((correctGuesses / Math.max(1, roundsTotal)) * 100);
+                document.getElementById('correctCount').textContent = correctGuesses;
+                document.getElementById('totalCount').textContent = roundsTotal;
+                document.getElementById('accuracyPercent').textContent = data && data.accuracy !== undefined ? data.accuracy : acc;
+                document.getElementById('earnedXP').textContent = data && data.xp !== undefined ? data.xp : '—';
+                if(data && data.xp){
+                    const xpEl = document.getElementById('currentXP');
+                    if(xpEl){
+                        const cur = parseInt(xpEl.textContent) || 0;
+                        xpEl.textContent = cur + Number(data.xp);
+                    }
+                    if(loc !== null && level !== null) {
+                        setTimeout(() => {
+                            window.location.href = `/begin/?completed=${loc},${level}`;
+                        }, 3000);
+                    }
+                }
+                resultsDiv.style.display = 'block';
+            }).catch(()=>{
+                const acc = Math.round((correctGuesses / Math.max(1, roundsTotal)) * 100);
+                document.getElementById('correctCount').textContent = correctGuesses;
+                document.getElementById('totalCount').textContent = roundsTotal;
+                document.getElementById('accuracyPercent').textContent = acc;
+                document.getElementById('earnedXP').textContent = '—';
+                resultsDiv.style.display = 'block';
+            });
+        }
+
+        // Initial render
+        renderCups();
+    })();
+    </script>
+</body>
+</html>
