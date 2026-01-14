@@ -11,6 +11,8 @@ from core.views import PlayLogicView
 from core.views import submit_logic
 from core.views import PlayAttentionView
 from core.views import submit_attention
+from core.views import PlayCupShuffleView
+from core.views import submit_cup_shuffle
 from core.views import LoginView, RegisterView, LogoutView, StatsView
 
 
@@ -30,5 +32,7 @@ urlpatterns = [
     path('play/logic/submit/', submit_logic, name='submit_logic'),
     path('play/attention/', PlayAttentionView.as_view(), name='play_attention'),
     path('play/attention/submit/', submit_attention, name='submit_attention'),
+    path('play/cups/', PlayCupShuffleView.as_view(), name='play_cups'),
+    path('play/cups/submit/', submit_cup_shuffle, name='submit_cup_shuffle'),
     path('begin/', views.begin, name='begin'),
 ]

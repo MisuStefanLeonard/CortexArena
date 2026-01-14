@@ -67,12 +67,14 @@ class GameType(models.Model):
     ATTENTION = "ATT"
     LOGIC = "LOG"
     REACTION = "REA"
+    SHUFFLE = "SHF"
 
     GAME_CHOICES = [
         (MEMORY, "Memorie"),
         (ATTENTION, "Atenție"),
         (LOGIC, "Logică"),
         (REACTION, "Reacție"),
+        (SHUFFLE, "Pahare"),
     ]
 
     name = models.CharField(max_length=16, choices=GAME_CHOICES, unique=True)
